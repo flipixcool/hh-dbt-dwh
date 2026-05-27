@@ -1,2 +1,19 @@
+
+# dbt
+target/
+dbt_packages/
+logs/
+.user.yml
+
+# env
+.env
+profiles.yml
+
+# python
+__pycache__/
+*.pyc
 venv/
 activate
+
+# os
+.DS_Store
