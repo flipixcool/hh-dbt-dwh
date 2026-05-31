@@ -1,5 +1,5 @@
 with source as (
-    SELECT * from {{ source('raw', 'vacancies') }}
+    select * from {{ source('raw', 'vacancies') }}
 )
 
 
@@ -8,8 +8,8 @@ select
     "Employer" as employer,
     "Name" as name,
     "Salary" as salary,
-    "From" as salary_from,
-    "To" as salary_to,
+    nullif("From", 'NaN'::float) as salary_from,
+    nullif("To", 'NaN'::float) as salary_to,
     "Experience" as experience,
     "Schedule" as schedule,
     "Keys" as keys,
