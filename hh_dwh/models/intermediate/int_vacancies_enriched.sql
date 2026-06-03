@@ -14,7 +14,10 @@ select
     keys,
     company_description,
     area,
-    professional_roles,
+    string_to_array(
+        regexp_replace(professional_roles, $r$[\[\]']$r$, '', 'g'),
+        ', '
+    ) as professional_roles,
     specializations,
     profarea_names,
     published_at, 

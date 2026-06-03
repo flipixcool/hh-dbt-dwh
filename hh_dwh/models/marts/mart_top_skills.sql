@@ -1,9 +1,10 @@
+{{ config(materialized='view) }}
+
 with staged as(
-    select * from {{ ref('int_vacancies_enriched') }}
+    select * from {{ ref('int_vacancy_skills') }}
 )
 
-select 
-
+select skill, count(skill) cnts 
 from staged
-where skills_array is not NULL
-order by 
+group by skill
+order by cnts desc
