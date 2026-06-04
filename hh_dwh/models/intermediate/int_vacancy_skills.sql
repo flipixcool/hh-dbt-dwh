@@ -1,15 +1,18 @@
 with staged as (
     select * from {{ ref('int_vacancies_enriched') }}
 ),
+
 temp as (
     select
+        name,
         vacancy_id,
         professional_roles[1] as professional_role,
         experience,
         unnest(skills_array) as skill
     from staged
 )
-select 
+select distinct
+    name,
     vacancy_id, 
     professional_role,
     experience,

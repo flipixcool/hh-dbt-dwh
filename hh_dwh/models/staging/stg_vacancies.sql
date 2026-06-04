@@ -1,5 +1,16 @@
 with source as (
     select * from {{ source('raw', 'vacancies') }}
+),
+
+deduplicated as (
+    select
+        *,
+        row_number() over (
+            partition by "Ids"
+            order by "Published at" desc nulls last
+        ) as vacancy_row_number
+    from source
+    where "Ids" is not null
 )
 
 
@@ -20,5 +31,5 @@ select
     "Profarea names" as profarea_names,
     "Published at" as published_at
 
-from source
-where "Ids" is not null
+from deduplicated
+where vacancy_row_number = 1
