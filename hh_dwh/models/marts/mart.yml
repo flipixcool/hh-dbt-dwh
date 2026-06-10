@@ -1,0 +1,42 @@
+version: 2
+
+models:
+  - name: mart_top_skills
+    description: Aggregated skill popularity mart based on normalized vacancy-skill data.
+    columns:
+      - name: skill
+        tests:
+          - not_null
+      - name: vacancy_count
+        tests:
+          - not_null
+
+  - name: mart_salary_by_role
+    description: Salary aggregation mart by vacancy name based on enriched vacancy data.
+    columns:
+      - name: name
+        tests:
+          - not_null
+      - name: count_vacancies
+        tests:
+          - not_null
+
+  - name: mart_backend_skills_by_experience
+    description: Top skills by experience for backend vacancies based on normalized vacancy-skill data.
+    columns:
+      - name: skill
+        tests:
+          - not_null
+      - name: vacancy_count
+        tests:
+          - not_null
+
+  - name: mart_data_engineer_skills_by_experience
+    description: Top skills by experience for data engineer vacancies based on normalized vacancy-skill data.
+    columns:
+      - name: skill
+        tests:
+          - not_null
+      - name: vacancy_count
+        tests:
+          - not_null
