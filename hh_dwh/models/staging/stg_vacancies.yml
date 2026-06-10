@@ -1,0 +1,10 @@
+version: 2
+
+models:
+  - name: stg_vacancies
+    description: Staging layer for raw HeadHunter vacancies with renamed columns and deduplication by vacancy_id.
+    columns:
+      - name: vacancy_id
+        tests:
+          - not_null
+          - unique

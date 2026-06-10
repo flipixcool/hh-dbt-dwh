@@ -1,0 +1,19 @@
+version: 2
+
+models:
+  - name: int_vacancy_skills
+    description: Normalized vacancy-skill dataset. Each row represents one skill associated with one vacancy and includes vacancy name, professional role, and experience for downstream skill-based marts.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - vacancy_id
+            - skill
+      
+    columns:
+      - name: vacancy_id
+        tests:
+          - not_null
+      
+      - name: skill
+        tests:
+          - not_null
