@@ -2,100 +2,201 @@
 
 [English version](README.md)
 
-Data Warehouse для аналитики вакансий HeadHunter на PostgreSQL и dbt.
-
-Проект показывает простую слоистую архитектуру DWH: сырые данные загружаются в PostgreSQL, затем трансформируются через dbt, проверяются dbt-тестами и публикуются в виде аналитических витрин.
-
-## Стек
-
-- PostgreSQL 15
-- dbt Core + dbt-postgres
-- dbt-utils
-- Python
-- pandas
-- Docker Compose
+Data Warehouse для аналитики вакансий HeadHunter. Проект построен как компактный DE/dbt pipeline: сырой CSV-экспорт вакансий загружается в PostgreSQL, затем данные проходят через слои dbt-моделей и публикуются в аналитические витрины по навыкам, опыту и зарплатам.
 
 ## Архитектура
 
 ```text
-raw.vacancies
-    ↓
-stg_vacancies
-    ↓
-int_vacancies_enriched
-    ↓
-int_vacancy_skills
-    ↓
-marts
+CSV dataset
+  (data/raw/IT_vacancies_full.csv)
+        ↓
+  Python Loader
+  - создает schema raw
+  - создает raw.vacancies
+  - загружает данные один раз, если таблица пустая
+        ↓
+    PostgreSQL
+   (raw.vacancies)
+        ↓
+      dbt
+   staging views
+   intermediate views
+   mart tables
+        ↓
+  dbt tests + dbt docs
 ```
 
-Проект использует стандартное разделение dbt-моделей по слоям:
+## Стек
 
-- `raw` хранит исходные данные HeadHunter без бизнес-трансформаций.
-- `staging` переименовывает колонки, выполняет базовую очистку и дедупликацию вакансий.
-- `intermediate` готовит переиспользуемые промежуточные модели для downstream-слоя.
-- `marts` содержит финальные аналитические таблицы для анализа.
+| Инструмент | Версия | Роль |
+|---|---:|---|
+| PostgreSQL | 15 | Хранилище DWH |
+| dbt Core | 1.8.x | SQL-трансформации и тесты |
+| dbt-postgres | 1.8.0 | dbt-адаптер для PostgreSQL |
+| dbt-utils | package-lock | Макросы и тесты для dbt |
+| Python | 3.x | Загрузчик сырого CSV |
+| pandas | 2.2.2 | Чтение CSV |
+| python-dotenv | 1.0.1 | Локальная конфигурация окружения |
+| Docker Compose | - | Инфраструктура PostgreSQL |
 
-## Модель данных
+## Сервисы и порты
 
-### `stg_vacancies`
+| Сервис | Порт |
+|---|---:|
+| PostgreSQL | 5432 |
+| dbt docs | 8080 по умолчанию |
 
-Staging-модель для сырых вакансий HeadHunter. Модель переименовывает поля и дедуплицирует записи по `vacancy_id`.
+## Требования
 
-Grain модели:
+- Docker + Docker Compose
+- Python 3.x
+- директория dbt-профилей `~/.dbt`
+- CSV с вакансиями HeadHunter по пути `data/raw/IT_vacancies_full.csv`
 
-```text
-одна строка = одна вакансия HeadHunter
+## Быстрый старт
+
+```bash
+# 1. Клонировать репозиторий
+git clone https://github.com/flipixcool/hh-dbt-dwh
+cd hh-dbt-dwh
+
+# 2. Настроить окружение
+# создать .env с PostgreSQL credentials
+
+# 3. Запустить PostgreSQL
+docker compose up -d
+
+# 4. Установить Python-зависимости
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# 5. Загрузить сырой CSV в PostgreSQL
+python loader/loader.py
+
+# 6. Установить dbt-пакеты
+cd hh_dwh
+dbt deps
+
+# 7. Запустить трансформации и тесты
+dbt run
+dbt test
 ```
 
-Проверки качества данных:
+PostgreSQL: `localhost:5432`  
+dbt profile name: `hh_dwh`
 
-- `vacancy_id` не должен быть `null`;
-- `vacancy_id` должен быть уникальным.
+Пример `.env`:
 
-### `int_vacancies_enriched`
-
-Intermediate-модель, которая подготавливает данные вакансий для downstream-моделей.
-
-В модели парсятся текстовые поля:
-
-- навыки в `skills_array`;
-- профессиональные роли в `professional_roles`.
-
-### `int_vacancy_skills`
-
-Нормализованная модель “вакансия-навык”, которая используется skill-based витринами.
-
-Grain модели:
-
-```text
-одна строка = один навык в одной вакансии
+```env
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=hh_dwh
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
 ```
 
-Проверки качества данных:
+Пример `~/.dbt/profiles.yml`:
 
-- `vacancy_id` не должен быть `null`;
-- `skill` не должен быть `null`;
-- комбинация `vacancy_id` и `skill` должна быть уникальной.
+```yaml
+hh_dwh:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: localhost
+      port: 5432
+      user: postgres
+      password: postgres
+      dbname: hh_dwh
+      schema: public
+      threads: 1
+```
+
+Сгенерировать dbt-документацию:
+
+```bash
+dbt docs generate
+dbt docs serve
+```
+
+## Схема данных
+
+**raw.vacancies** - сырые вакансии HeadHunter, загруженные из CSV
+
+| Колонка | Тип | Описание |
+|---|---|---|
+| Ids | INTEGER | Идентификатор вакансии |
+| Employer | TEXT | Работодатель |
+| Name | TEXT | Название вакансии |
+| Salary | BOOLEAN | Флаг наличия зарплаты |
+| From | FLOAT | Нижняя граница зарплаты |
+| To | FLOAT | Верхняя граница зарплаты |
+| Experience | TEXT | Требуемый опыт |
+| Schedule | TEXT | График работы |
+| Keys | TEXT | Список навыков в текстовом виде |
+| Description | TEXT | Описание вакансии/компании |
+| Area | TEXT | Локация вакансии |
+| Professional roles | TEXT | Профессиональные роли в текстовом виде |
+| Specializations | TEXT | Метаданные специализаций |
+| Profarea names | TEXT | Названия профессиональных областей |
+| Published at | TIMESTAMP | Время публикации |
+
+**stg_vacancies** - очищенный staging view, одна строка на вакансию
+
+| Колонка | Описание |
+|---|---|
+| vacancy_id | Переименованный id из `Ids` |
+| employer | Работодатель |
+| name | Название вакансии |
+| salary | Флаг наличия зарплаты |
+| salary_from | Очищенная нижняя граница зарплаты |
+| salary_to | Очищенная верхняя граница зарплаты |
+| experience | Требуемый опыт |
+| schedule | График работы |
+| keys | Сырой текст с навыками |
+| company_description | Описание |
+| area | Локация вакансии |
+| professional_roles | Сырой текст с профессиональными ролями |
+| specializations | Метаданные специализаций |
+| profarea_names | Названия профессиональных областей |
+| published_at | Время публикации |
+
+**int_vacancies_enriched** - переиспользуемый enriched view с подготовленными массивами
+
+| Колонка | Описание |
+|---|---|
+| skills_array | Массив навыков, распарсенный из `keys` |
+| professional_roles | Массив профессиональных ролей |
+| other columns | Остальные атрибуты вакансии из `stg_vacancies` |
+
+**int_vacancy_skills** - нормализованный view “вакансия-навык”
+
+| Колонка | Описание |
+|---|---|
+| name | Название вакансии |
+| vacancy_id | Идентификатор вакансии |
+| professional_role | Первая распарсенная профессиональная роль |
+| experience | Требуемый опыт |
+| skill | Один распарсенный навык |
 
 ## Аналитические витрины
 
-В проекте есть четыре витрины:
-
-- `mart_top_skills`: общая популярность навыков на основе нормализованной модели `int_vacancy_skills`.
-- `mart_backend_skills_by_experience`: популярные backend-навыки в разрезе опыта.
-- `mart_data_engineer_skills_by_experience`: популярные data engineering навыки в разрезе опыта.
-- `mart_salary_by_role`: агрегация зарплат по названию вакансии на основе enriched-слоя.
-
-Все skill-based витрины строятся от `int_vacancy_skills`. Благодаря этому парсинг и нормализация навыков выполняются один раз и переиспользуются downstream-моделями.
+| Витрина | Grain | Описание |
+|---|---|---|
+| mart_top_skills | одна строка на навык | Общая популярность навыков |
+| mart_backend_skills_by_experience | одна строка на опыт и навык | Backend-навыки по уровню опыта |
+| mart_data_engineer_skills_by_experience | одна строка на опыт и навык | Data engineering навыки по уровню опыта |
+| mart_salary_by_role | одна строка на название вакансии | Средние границы зарплат и количество вакансий по роли |
 
 ## Качество данных
 
 В проекте используются dbt data tests для проверки ключевых предположений:
 
-- вакансии в staging-слое уникальны по `vacancy_id`;
-- строки в `int_vacancy_skills` уникальны по `(vacancy_id, skill)`;
-- ключевые измерения и метрики в витринах не содержат `null`.
+- `stg_vacancies.vacancy_id` не должен быть `null` и должен быть уникальным.
+- `int_vacancy_skills.vacancy_id` и `skill` не должны быть `null`.
+- `(vacancy_id, skill)` должен быть уникальным в `int_vacancy_skills`.
+- Ключевые измерения и метрики в витринах не должны быть `null`.
 
 Текущий ожидаемый результат:
 
@@ -106,122 +207,63 @@ Grain модели:
 ## Структура проекта
 
 ```text
-.
-├── docker-compose.yml
+hh-dbt-dwh/
+├── docker-compose.yml          # PostgreSQL service
+├── requirements.txt            # Python и dbt зависимости
+├── data/
+│   └── raw/
+│       └── IT_vacancies_full.csv
 ├── loader/
-│   └── loader.py
-├── hh_dwh/
-│   ├── dbt_project.yml
-│   ├── models/
-│   │   ├── staging/
-│   │   ├── intermediate/
-│   │   └── marts/
-│   ├── packages.yml
-│   └── package-lock.yml
-└── requirements.txt
-```
-
-## Как запустить
-
-Запустить PostgreSQL:
-
-```bash
-docker compose up -d
-```
-
-Установить Python-зависимости:
-
-```bash
-pip install -r requirements.txt
-```
-
-Создать `.env` файл с настройками подключения к PostgreSQL:
-
-```env
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_DB=your_database
-POSTGRES_USER=your_user
-POSTGRES_PASSWORD=your_password
-```
-
-Положить исходный CSV-файл с вакансиями по пути:
-
-```text
-data/raw/IT_vacancies_full.csv
-```
-
-Загрузить сырые данные в PostgreSQL:
-
-```bash
-python loader/loader.py
-```
-
-Установить dbt-пакеты:
-
-```bash
-cd hh_dwh
-dbt deps
-```
-
-Настроить локальный dbt-профиль `hh_dwh` в `~/.dbt/profiles.yml`:
-
-```yaml
-hh_dwh:
-  target: dev
-  outputs:
-    dev:
-      type: postgres
-      host: localhost
-      port: 5432
-      user: your_user
-      password: your_password
-      dbname: your_database
-      schema: public
-      threads: 1
-```
-
-Запустить dbt-модели:
-
-```bash
-dbt run
-```
-
-Запустить dbt-тесты:
-
-```bash
-dbt test
-```
-
-Сгенерировать и открыть dbt-документацию:
-
-```bash
-dbt docs generate
-dbt docs serve
+│   └── loader.py               # CSV -> raw.vacancies loader
+└── hh_dwh/
+    ├── dbt_project.yml         # dbt project config
+    ├── packages.yml            # dbt packages
+    ├── models/
+    │   ├── staging/
+    │   │   ├── sources.yml
+    │   │   ├── stg_vacancies.sql
+    │   │   └── stg_vacancies.yml
+    │   ├── intermediate/
+    │   │   ├── int_vacancies_enriched.sql
+    │   │   ├── int_vacancy_skills.sql
+    │   │   └── int_vacancy_skills.yml
+    │   └── marts/
+    │       ├── mart_top_skills.sql
+    │       ├── mart_backend_skills_by_experience.sql
+    │       ├── mart_data_engineer_skills_by_experience.sql
+    │       ├── mart_salary_by_role.sql
+    │       └── mart.yml
+    ├── analyses/
+    ├── macros/
+    ├── seeds/
+    ├── snapshots/
+    └── tests/
 ```
 
 ## dbt Lineage
 
-Граф dbt documentation показывает основной pipeline:
-
 ```text
 raw.vacancies
-→ stg_vacancies
-→ int_vacancies_enriched
-→ int_vacancy_skills
-→ skill-based marts
+    ↓
+stg_vacancies
+    ↓
+int_vacancies_enriched
+    ├── mart_salary_by_role
+    ↓
+int_vacancy_skills
+    ├── mart_top_skills
+    ├── mart_backend_skills_by_experience
+    └── mart_data_engineer_skills_by_experience
 ```
-
-`mart_salary_by_role` строится напрямую от `int_vacancies_enriched`, а skill-based витрины переиспользуют `int_vacancy_skills`.
 
 ## Что показывает проект
 
 Проект демонстрирует:
 
-- слоистое моделирование DWH через dbt;
-- разделение моделей на staging, intermediate и marts;
-- дедупликацию вакансий по бизнес-ключу;
+- raw-to-mart DWH-моделирование на PostgreSQL и dbt;
+- детерминированную загрузку CSV в raw schema;
+- staging-очистку и дедупликацию вакансий по бизнес-ключу;
+- переиспользуемые intermediate-модели для распарсенных навыков и профессиональных ролей;
 - нормализованную модель “вакансия-навык”;
-- переиспользуемый intermediate-слой;
-- аналитические витрины для анализа навыков, опыта и зарплат;
+- аналитические витрины для навыков, опыта и зарплат;
 - dbt-документацию и data quality tests.

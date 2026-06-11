@@ -2,169 +2,101 @@
 
 [Русская версия](README.ru.md)
 
-Data Warehouse for HeadHunter vacancy analytics built with PostgreSQL and dbt.
-
-The project demonstrates a simple layered DWH architecture for job market analysis: raw data is loaded into PostgreSQL, transformed with dbt, tested with dbt data tests, and exposed through analytical marts.
-
-## Stack
-
-- PostgreSQL 15
-- dbt Core with dbt-postgres
-- dbt-utils
-- Python
-- pandas
-- Docker Compose
+Data Warehouse for HeadHunter vacancy analytics. Built as a compact DE/dbt project for loading raw vacancy exports into PostgreSQL, transforming them through layered dbt models, and producing analytical marts for skills, experience levels, and salary analysis.
 
 ## Architecture
 
 ```text
-raw.vacancies
-    ↓
-stg_vacancies
-    ↓
-int_vacancies_enriched
-    ↓
-int_vacancy_skills
-    ↓
-marts
+CSV dataset
+  (data/raw/IT_vacancies_full.csv)
+        ↓
+  Python Loader
+  - creates raw schema
+  - creates raw.vacancies
+  - loads data once if table is empty
+        ↓
+    PostgreSQL
+   (raw.vacancies)
+        ↓
+      dbt
+   staging views
+   intermediate views
+   mart tables
+        ↓
+  dbt tests + dbt docs
 ```
 
-The project follows a standard dbt layering approach:
+## Stack
 
-- `raw` stores the original HeadHunter vacancy data.
-- `staging` renames columns, applies basic cleanup, and deduplicates vacancies.
-- `intermediate` prepares reusable business entities for downstream models.
-- `marts` contains final analytical tables for reporting and analysis.
+| Tool | Version | Role |
+|---|---:|---|
+| PostgreSQL | 15 | Data warehouse storage |
+| dbt Core | 1.8.x | SQL transformations and tests |
+| dbt-postgres | 1.8.0 | PostgreSQL adapter for dbt |
+| dbt-utils | package-lock | Utility macros and tests |
+| Python | 3.x | Raw CSV loader |
+| pandas | 2.2.2 | CSV reading |
+| python-dotenv | 1.0.1 | Local environment config |
+| Docker Compose | - | PostgreSQL infrastructure |
 
-## Data Model
+## Services & Ports
 
-### `stg_vacancies`
+| Service | Port |
+|---|---:|
+| PostgreSQL | 5432 |
+| dbt docs | 8080 by default |
 
-Staging model for raw HeadHunter vacancies. It renames raw columns and deduplicates records by `vacancy_id`.
+## Prerequisites
 
-Grain:
+- Docker + Docker Compose
+- Python 3.x
+- dbt profile directory available at `~/.dbt`
+- HeadHunter vacancy CSV placed at `data/raw/IT_vacancies_full.csv`
 
-```text
-one row = one HeadHunter vacancy
-```
-
-Data quality checks:
-
-- `vacancy_id` is not null
-- `vacancy_id` is unique
-
-### `int_vacancies_enriched`
-
-Intermediate model that prepares vacancy data for downstream transformations.
-
-It parses text fields into arrays:
-
-- skills into `skills_array`
-- professional roles into `professional_roles`
-
-### `int_vacancy_skills`
-
-Normalized vacancy-skill model used by skill-based marts.
-
-Grain:
-
-```text
-one row = one skill in one vacancy
-```
-
-Data quality checks:
-
-- `vacancy_id` is not null
-- `skill` is not null
-- combination of `vacancy_id` and `skill` is unique
-
-## Analytical Marts
-
-The project currently contains four marts:
-
-- `mart_top_skills`: overall skill popularity based on normalized vacancy-skill data.
-- `mart_backend_skills_by_experience`: top backend skills grouped by experience level.
-- `mart_data_engineer_skills_by_experience`: top data engineering skills grouped by experience level.
-- `mart_salary_by_role`: salary aggregation by vacancy name based on enriched vacancy data.
-
-Skill-based marts are built from `int_vacancy_skills`, so skill parsing and normalization are implemented once and reused downstream.
-
-## Data Quality
-
-The project uses dbt data tests to validate key assumptions:
-
-- staging vacancies are unique by `vacancy_id`;
-- normalized vacancy-skill rows are unique by `(vacancy_id, skill)`;
-- key mart dimensions and metrics are not null.
-
-Current expected test result:
-
-```text
-13 data tests passed
-```
-
-## Project Structure
-
-```text
-.
-├── docker-compose.yml
-├── loader/
-│   └── loader.py
-├── hh_dwh/
-│   ├── dbt_project.yml
-│   ├── models/
-│   │   ├── staging/
-│   │   ├── intermediate/
-│   │   └── marts/
-│   ├── packages.yml
-│   └── package-lock.yml
-└── requirements.txt
-```
-
-## How to Run
-
-Start PostgreSQL:
+## Quick Start
 
 ```bash
+# 1. Clone
+git clone https://github.com/flipixcool/hh-dbt-dwh
+cd hh-dbt-dwh
+
+# 2. Configure environment
+# create .env with your PostgreSQL credentials
+
+# 3. Start PostgreSQL
 docker compose up -d
-```
 
-Install Python dependencies:
-
-```bash
+# 4. Install Python deps
+python -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
+
+# 5. Load raw CSV into PostgreSQL
+python loader/loader.py
+
+# 6. Install dbt packages
+cd hh_dwh
+dbt deps
+
+# 7. Run transformations and tests
+dbt run
+dbt test
 ```
 
-Create a `.env` file with PostgreSQL connection settings:
+PostgreSQL: `localhost:5432`  
+dbt profile name: `hh_dwh`
+
+Example `.env`:
 
 ```env
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
-POSTGRES_DB=your_database
-POSTGRES_USER=your_user
-POSTGRES_PASSWORD=your_password
+POSTGRES_DB=hh_dwh
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
 ```
 
-Place the raw vacancy dataset at:
-
-```text
-data/raw/IT_vacancies_full.csv
-```
-
-Load raw data into PostgreSQL:
-
-```bash
-python loader/loader.py
-```
-
-Install dbt packages:
-
-```bash
-cd hh_dwh
-dbt deps
-```
-
-Configure a local dbt profile named `hh_dwh` in `~/.dbt/profiles.yml`:
+Example `~/.dbt/profiles.yml`:
 
 ```yaml
 hh_dwh:
@@ -174,54 +106,164 @@ hh_dwh:
       type: postgres
       host: localhost
       port: 5432
-      user: your_user
-      password: your_password
-      dbname: your_database
+      user: postgres
+      password: postgres
+      dbname: hh_dwh
       schema: public
       threads: 1
 ```
 
-Run dbt models:
-
-```bash
-dbt run
-```
-
-Run dbt tests:
-
-```bash
-dbt test
-```
-
-Generate and serve dbt documentation:
+Generate dbt documentation:
 
 ```bash
 dbt docs generate
 dbt docs serve
 ```
 
-## dbt Lineage
+## Data Schema
 
-The dbt documentation graph shows the main pipeline:
+**raw.vacancies** - raw HeadHunter vacancy records loaded from CSV
+
+| Column | Type | Description |
+|---|---|---|
+| Ids | INTEGER | Vacancy identifier |
+| Employer | TEXT | Employer name |
+| Name | TEXT | Vacancy title |
+| Salary | BOOLEAN | Salary availability flag |
+| From | FLOAT | Lower salary boundary |
+| To | FLOAT | Upper salary boundary |
+| Experience | TEXT | Required experience level |
+| Schedule | TEXT | Work schedule |
+| Keys | TEXT | Skills list stored as text |
+| Description | TEXT | Vacancy/company description |
+| Area | TEXT | Vacancy location |
+| Professional roles | TEXT | Professional roles stored as text |
+| Specializations | TEXT | Specialization metadata |
+| Profarea names | TEXT | Professional area names |
+| Published at | TIMESTAMP | Publication timestamp |
+
+**stg_vacancies** - cleaned staging view with one row per vacancy
+
+| Column | Description |
+|---|---|
+| vacancy_id | Renamed vacancy id from `Ids` |
+| employer | Employer name |
+| name | Vacancy title |
+| salary | Salary availability flag |
+| salary_from | Cleaned lower salary boundary |
+| salary_to | Cleaned upper salary boundary |
+| experience | Required experience |
+| schedule | Work schedule |
+| keys | Raw skills text |
+| company_description | Description text |
+| area | Vacancy location |
+| professional_roles | Raw professional roles text |
+| specializations | Specialization metadata |
+| profarea_names | Professional area names |
+| published_at | Publication timestamp |
+
+**int_vacancies_enriched** - reusable enriched vacancy view
+
+| Column | Description |
+|---|---|
+| skills_array | Parsed skills array from `keys` |
+| professional_roles | Parsed professional roles array |
+| other columns | Pass-through vacancy attributes from `stg_vacancies` |
+
+**int_vacancy_skills** - normalized vacancy-skill view
+
+| Column | Description |
+|---|---|
+| name | Vacancy title |
+| vacancy_id | Vacancy identifier |
+| professional_role | First parsed professional role |
+| experience | Required experience level |
+| skill | One parsed skill |
+
+## Analytical Marts
+
+| Mart | Grain | Description |
+|---|---|---|
+| mart_top_skills | one row per skill | Overall skill popularity |
+| mart_backend_skills_by_experience | one row per experience and skill | Backend skill demand by experience level |
+| mart_data_engineer_skills_by_experience | one row per experience and skill | Data engineering skill demand by experience level |
+| mart_salary_by_role | one row per vacancy title | Average salary boundaries and vacancy count by role |
+
+## Data Quality
+
+The project uses dbt data tests for key modeling assumptions:
+
+- `stg_vacancies.vacancy_id` is not null and unique.
+- `int_vacancy_skills.vacancy_id` and `skill` are not null.
+- `(vacancy_id, skill)` is unique in `int_vacancy_skills`.
+- Mart dimensions and metrics are not null.
+
+Current expected result:
+
+```text
+13 data tests passed
+```
+
+## Project Structure
+
+```text
+hh-dbt-dwh/
+├── docker-compose.yml          # PostgreSQL service
+├── requirements.txt            # Python and dbt dependencies
+├── data/
+│   └── raw/
+│       └── IT_vacancies_full.csv
+├── loader/
+│   └── loader.py               # CSV -> raw.vacancies loader
+└── hh_dwh/
+    ├── dbt_project.yml         # dbt project config
+    ├── packages.yml            # dbt packages
+    ├── models/
+    │   ├── staging/
+    │   │   ├── sources.yml
+    │   │   ├── stg_vacancies.sql
+    │   │   └── stg_vacancies.yml
+    │   ├── intermediate/
+    │   │   ├── int_vacancies_enriched.sql
+    │   │   ├── int_vacancy_skills.sql
+    │   │   └── int_vacancy_skills.yml
+    │   └── marts/
+    │       ├── mart_top_skills.sql
+    │       ├── mart_backend_skills_by_experience.sql
+    │       ├── mart_data_engineer_skills_by_experience.sql
+    │       ├── mart_salary_by_role.sql
+    │       └── mart.yml
+    ├── analyses/
+    ├── macros/
+    ├── seeds/
+    ├── snapshots/
+    └── tests/
+```
+
+## dbt Lineage
 
 ```text
 raw.vacancies
-→ stg_vacancies
-→ int_vacancies_enriched
-→ int_vacancy_skills
-→ skill-based marts
+    ↓
+stg_vacancies
+    ↓
+int_vacancies_enriched
+    ├── mart_salary_by_role
+    ↓
+int_vacancy_skills
+    ├── mart_top_skills
+    ├── mart_backend_skills_by_experience
+    └── mart_data_engineer_skills_by_experience
 ```
-
-`mart_salary_by_role` is built directly from `int_vacancies_enriched`, while skill-based marts reuse `int_vacancy_skills`.
 
 ## Portfolio Summary
 
 This project demonstrates:
 
-- layered DWH modeling with dbt;
-- staging, intermediate, and mart layers;
-- vacancy deduplication by business key;
+- raw-to-mart DWH modeling with PostgreSQL and dbt;
+- deterministic CSV ingestion into a raw schema;
+- staging cleanup and vacancy deduplication by business key;
+- reusable intermediate models for parsed skills and professional roles;
 - normalized vacancy-skill modeling;
-- reusable intermediate models;
 - analytical marts for skills, experience, and salary analysis;
 - dbt documentation and data quality tests.
